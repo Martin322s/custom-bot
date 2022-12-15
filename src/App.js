@@ -2,7 +2,7 @@ import { useState } from "react";
 import "./App.css";
 
 function App() {
-    const [text, setText] = useState("");
+    const [text, setText] = useState(localStorage.getItem("text"));
 
     const onChange = (ev) => {
         setText(ev.target.value);
