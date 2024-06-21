@@ -1,28 +1,31 @@
 const Binance = require('binance-api-node').default;
 const WebSocket = require('ws');
+const express = require('express');
+const app = express();
+const port = process.env.PORT || 3001;
 
 const client = Binance({
     apiKey: 'KVB4hxKAlSZ4Ecqhj3KWaPTBchHchXsXlMt3UiAdKTJ3N10crBGbgVX3Z0O0X6wv',
     apiSecret: '408U515fkngx5WYipyUpFPzBvKhttiCwUuvjPR2SIMhBLwXMdUy8si77UqE72Pyx',
 });
 
-const buyPriceThreshold = 69386.00; // Example buy price threshold (in USDT)
-const sellPriceThreshold = 69414.00; // Example sell price threshold (in USDT)
-const minimumTradeAmount = 0.0001; // Minimum trade amount for BTC on Binance
+const buyPriceThreshold = 0.065; // Example buy price threshold (in USDT)
+const sellPriceThreshold = 0.070; // Example sell price threshold (in USDT)
+const minimumTradeAmount = 10; // Minimum trade amount for DOGE on Binance
 
 let usdtBalance = 0;
-let btcBalance = 0;
+let dogeBalance = 0;
 
 async function checkBalances() {
     try {
         const accountInfo = await client.accountInfo();
         const usdt = accountInfo.balances.find(asset => asset.asset === 'USDT');
-        const btc = accountInfo.balances.find(asset => asset.asset === 'BTC');
+        const doge = accountInfo.balances.find(asset => asset.asset === 'DOGE');
 
         usdtBalance = parseFloat(usdt.free);
-        btcBalance = parseFloat(btc.free);
+        dogeBalance = parseFloat(doge.free);
 
-        console.log(`Balance Check - USDT Balance: ${usdt.free}, BTC Balance: ${btc.free}`);
+        console.log(`Balance Check - USDT Balance: ${usdt.free}, DOGE Balance: ${doge.free}`);
     } catch (error) {
         console.error('Error in fetching account info:', error);
     }
@@ -31,10 +34,10 @@ async function checkBalances() {
 async function placeOrder(side, quantity) {
     try {
         const order = await client.order({
-            symbol: 'BTCUSDT',
+            symbol: 'DOGEUSDT',
             side,
             type: 'MARKET',
-            quantity: quantity.toFixed(6),
+            quantity: quantity.toFixed(2),
         });
         console.log(`${side} Order Placed:`, order);
         await checkBalances(); // Update balances after placing an order
@@ -46,25 +49,27 @@ async function placeOrder(side, quantity) {
 async function main() {
     await checkBalances(); // Initial balance check
 
-    const ws = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@trade');
+    const ws = new WebSocket('wss://stream.binance.com:9443/ws/dogeusdt@trade');
 
     ws.on('message', async (data) => {
         const message = JSON.parse(data);
-        const btcUsdtPrice = parseFloat(message.p);
+        const dogeUsdtPrice = parseFloat(message.p);
 
-        if (btcUsdtPrice <= buyPriceThreshold && usdtBalance >= (minimumTradeAmount * btcUsdtPrice)) {
-            const btcAmountToBuy = (usdtBalance / btcUsdtPrice).toFixed(6);
-            console.log(`Buying BTC - Amount: ${btcAmountToBuy}, USDT Balance: ${usdtBalance}`);
-            await placeOrder('BUY', parseFloat(btcAmountToBuy));
+        console.log(`Price Update - Current DOGE/USDT Price: ${dogeUsdtPrice}`);
+
+        if (dogeUsdtPrice <= buyPriceThreshold && usdtBalance >= (minimumTradeAmount * dogeUsdtPrice)) {
+            const dogeAmountToBuy = (usdtBalance / dogeUsdtPrice).toFixed(2);
+            console.log(`Buying DOGE - Amount: ${dogeAmountToBuy}, USDT Balance: ${usdtBalance}`);
+            await placeOrder('BUY', parseFloat(dogeAmountToBuy));
         }
 
-        if (btcUsdtPrice >= sellPriceThreshold) {
-            console.log(`Sell Condition Met - Current Price: ${btcUsdtPrice}, Sell Threshold: ${sellPriceThreshold}`);
-            if (btcBalance >= minimumTradeAmount) {
-                console.log(`Selling BTC - Amount: ${btcBalance}, BTC Balance: ${btcBalance}`);
-                await placeOrder('SELL', btcBalance);
+        if (dogeUsdtPrice >= sellPriceThreshold) {
+            console.log(`Sell Condition Met - Current Price: ${dogeUsdtPrice}, Sell Threshold: ${sellPriceThreshold}`);
+            if (dogeBalance >= minimumTradeAmount) {
+                console.log(`Selling DOGE - Amount: ${dogeBalance}, DOGE Balance: ${dogeBalance}`);
+                await placeOrder('SELL', dogeBalance);
             } else {
-                console.log(`Insufficient BTC Balance - Current Balance: ${btcBalance}, Minimum Required: ${minimumTradeAmount}`);
+                console.log(`Insufficient DOGE Balance - Current Balance: ${dogeBalance}, Minimum Required: ${minimumTradeAmount}`);
             }
         }
     });
@@ -85,9 +90,19 @@ async function main() {
     }, 10 * 60 * 1000); // Check balances every 10 minutes
 }
 
+// Start the bot in the background
 main();
 
-process.on('SIGINT', () => {
-    console.log('Shutting down gracefully...');
-    process.exit();
+// Define API endpoints
+app.get('/', (req, res) => {
+    res.send('Binance Trading Bot is running.');
+});
+
+app.get('/status', async (req, res) => {
+    await checkBalances();
+    res.json({ usdtBalance, dogeBalance });
+});
+
+app.listen(port, () => {
+    console.log(`Server is running on http://localhost:${port}`);
 });
